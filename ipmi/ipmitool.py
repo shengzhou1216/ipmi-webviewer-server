@@ -3,7 +3,7 @@ import pyipmi.interfaces
 import logging
 import json
 import shlex
-import subprocess
+from subprocess import Popen,PIPE
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +72,7 @@ def ipmi_command(self,device,command):
     ### 执行IPMI命令
     ### 返回一个CompletedProcess实例
     cmd = "ipmitool -I lanplus -U %s -P %s -H %s %s" % (device.username,device.password,device.ip,command)
-    return subprocess.run(shlex.split(cmd))
+    return Popen(shlex.split(cmd))
     
 
 # 获取温度
@@ -102,5 +102,17 @@ def get_chassis_status(ipmi):
         'chassis_state': chassis_status.chassis_state
     }
 
+def scan_devices2(network):
+    cmd = 'sudo nmap -sU --script ipmi-version -p 623 %s' % network
+    proc = Popen(shlex.split(cmd),stdout=PIPE,stderr=PIPE)
+    while True:
+        line = proc.stdout.readline()
+        if not line:
+            break
+        print('test: %s' % str(line.rstrip(),encoding='utf-8'))
+
+def isHost(line):
+    return line
+
 if __name__ == '__main__':
-    check_ipmi_device('10.1.35.19', 'admin', 'admin')
+    scan_devices2('10.1.35.155/24')

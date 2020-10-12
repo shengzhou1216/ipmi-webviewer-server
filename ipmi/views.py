@@ -7,7 +7,9 @@ def index(request):
 
 def get_all_devices(request):
     ### 获取所有的设备
-    return json.dumps(Device.objects.all())
+    devices = list(Device.objects.all())
+    print(devices)
+    return devices
 
 def scan_devices(request):
     ### 扫描设备
