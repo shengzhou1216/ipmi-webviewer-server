@@ -1,4 +1,4 @@
-# 扫描网络中支持IPMI的设备
+# 使用namp扫描网络中支持IPMI的设备
 - 方案1
 > nmap -sU --script ipmi-version -p 623 10.1.35.155/24 
 ___
@@ -414,3 +414,6 @@ Nmap done: 256 IP addresses (46 hosts up) scanned in 6.97 seconds
 ```
 
 # 如何处理脚本输出的数据
+迭代输出流，使用python的字符串相关的方法处理
+
+# 

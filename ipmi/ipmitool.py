@@ -3,116 +3,122 @@ import pyipmi.interfaces
 import logging
 import json
 import shlex
+import re
 from subprocess import Popen,PIPE
 
 logger = logging.getLogger(__name__)
-
-
-def check_device():
-    pass
-
-def check_ipmi_device(deviceIp, username, password, port=623):
-    # 检查是否为IPMI设备
-    try:
-        interface = pyipmi.interfaces.create_interface(interface='ipmitool',
-                                                   interface_type='lanplus')
-        ipmi = pyipmi.create_connection(interface)
-        ipmi.session.set_session_type_rmcp(deviceIp, port=port)
-        ipmi.session.set_auth_type_user(username, password)
-        ipmi.target = pyipmi.Target(ipmb_address=0x20)
-        ipmi.session.establish()
-        device_id = ipmi.get_device_id()
-        # Below code used only to print out the device ID information
-        # print('''
-        # Device ID:          %(device_id)s
-        # Device Revision:    %(revision)s
-        # Firmware Revision:  %(fw_revision)s
-        # IPMI Version:       %(ipmi_version)s
-        # Manufacturer ID:    %(manufacturer_id)d (0x%(manufacturer_id)04x)
-        # Product ID:         %(product_id)d (0x%(product_id)04x)
-        # Device Available:   %(available)d
-        # Provides SDRs:      %(provides_sdrs)d
-        # Additional Device Support:
-        # '''[1:-1] % device_id.__dict__)
-        functions = (
-            ('SENSOR', 'Sensor Device'),
-            ('SDR_REPOSITORY', 'SDR Repository Device'),
-            ('SEL', 'SEL Device'),
-            ('FRU_INVENTORY', 'FRU Inventory Device'),
-            ('IPMB_EVENT_RECEIVER', 'IPMB Event Receiver'),
-            ('IPMB_EVENT_GENERATOR', 'IPMB Event Generator'),
-            ('BRIDGE', 'Bridge'),
-            ('CHASSIS', 'Chassis Device')
-        )
-        for n, s in functions:
-            if device_id.supports_function(n):
-                logger.info('  %s' % s)
-        if device_id.aux is not None:
-            logger.info('Aux Firmware Rev Info:  [%s]' % (
-                ' '.join('0x%02x' % d for d in device_id.aux)))
-    except RuntimeError as err:
-        print(err)
-        return False,None
-    data = {
-        'device_id': device_id.__dict__['device_id'],
-        'revision': str(device_id.__dict__['revision']),
-        'fw_revision': str(device_id.__dict__['fw_revision']),
-        'ipmi_version': str(device_id.__dict__['ipmi_version']),
-        'available': device_id.__dict__['available'],
-    }
-    # get cahasis status 
-    chassis_status =  get_chassis_status(ipmi)
-    # get system_info
-    # system_info = get_system_info(ipmi)
-
-    return True, data
-
-
-def ipmi_command(self,device,command):
-    ### 执行IPMI命令
-    ### 返回一个CompletedProcess实例
-    cmd = "ipmitool -I lanplus -U %s -P %s -H %s %s" % (device.username,device.password,device.ip,command)
-    return Popen(shlex.split(cmd))
     
-
-# 获取温度
-def get_system_info(ipmi):
-    r = ipmi.session.get_system_info()
-    print(r)
-    return {}
-
-def get_chassis_status(ipmi):
-    chassis_status = ipmi.get_chassis_status()
-    print('restore_policy:%s'% chassis_status.restore_policy)
-    print('control_fault:%s' % chassis_status.control_fault)
-    print('fault:%s' % chassis_status.fault)
-    print('interlock:%s' % chassis_status.interlock)
-    print('overload:%s' % chassis_status.overload)
-    print('power_on:%s' % chassis_status.power_on)
-    print('last_event:%s' % chassis_status.last_event)
-    print('chassis_state:%s' % chassis_status.chassis_state)
-    return {
-        'restore_policy': chassis_status.restore_policy,
-        'control_fault': chassis_status.control_fault,
-        'fault': chassis_status.fault,
-        'interlock': chassis_status.interlock,
-        'overload': chassis_status.overload,
-        'power_on': chassis_status.power_on,
-        'last_event': chassis_status.last_event,
-        'chassis_state': chassis_status.chassis_state
-    }
-
-def scan_devices2(network):
+# 扫描设备
+def scan_devices(network):
+    print('==========scan_devices:%s========' % network)
     cmd = 'sudo nmap -sU --script ipmi-version -p 623 %s' % network
     proc = Popen(shlex.split(cmd),stdout=PIPE,stderr=PIPE)
+    hosts = []
+    temp_host = ''''''
     while True:
         line = proc.stdout.readline()
+        line = str(line.rstrip(),encoding='utf-8')
+        if line == '' or is_nmap_started(line):
+            continue
+        if is_host_started(line):
+            temp_host = line
+        elif is_host_ended(line):
+            temp_host += '''\n''' + line
+            hosts.append(temp_host)
+        elif is_nmap_ended(line):
+            hosts.append(temp_host)
+            break
+        else:
+            temp_host += '''\n''' + line
+    r = []
+    for host in hosts:
+        if not is_ipmi_device(host):
+            continue
+        ip = get_host_ip(host)
+        mac = get_host_mac(host)
+        r.append({
+            'ip': ip,
+            'mac': mac,
+        })
+    print('scan_devices finished:%s' % r)
+    return r    
+def is_host_started(s):
+    return 'Nmap scan report for' in s
+
+def get_host_ip(s):
+    r = re.findall(r'\d+\.\d+\.\d+\.\d+', s)
+    if r and len(r) > 0:
+        return r[0]
+    return None    
+
+def is_host_ended(s):
+    return 'MAC Address' in s
+
+def is_nmap_started(s):
+    return 'Starting Nmap' in s
+
+def is_nmap_ended(s):
+    return 'Nmap done' in s
+
+def is_host_up(s):
+    return 'Host is up' in s    
+
+def is_ipmi_device(s):
+    return 'ipmi-version' in s
+
+def get_host_mac(s):
+    r = re.findall(r'(?:[0-9a-fA-F]:?){12}', s)
+    if r and len(r) > 0:
+        return r[0]
+    return None    
+
+# 获取电源状态
+def power_status(ip,username,password):
+    print('==========power_status: %s,%s,%s=======' % (ip,username, password))
+    cmd = 'ipmitool -I lanplus -H %s -U %s -P %s  power status' % (ip,username,password)
+    outs,errs = Popen(shlex.split(cmd), stdout=PIPE,stderr=PIPE).communicate()
+    if errs:
+        return False,str(errs,encoding='utf-8')
+    is_up = 'on' in str(outs,encoding='utf-8').lower()
+    return True,is_up    
+
+# 开机/关机
+def powerctl(ip,username,password,status):
+    print('==========powerctl: %s,%s,%s,%s========' % (ip,username,password,status))
+    cmd = 'ipmitool -I lanplus -H %s -U %s -P %s power %s' % (
+        ip, username, password,status)
+    outs, errs = Popen(shlex.split(cmd), stdout=PIPE,stderr=PIPE).communicate()
+    if errs:
+        return False, str(errs,encoding='utf-8')
+    return True, str(outs,encoding='utf-8')
+
+    
+# 获取温度
+def temperature(ip,username,password):
+    print('==========temperature: %s,%s,%s========' % (ip, username, password))
+    cmd = 'ipmitool -I lanplus -H %s -U %s -P %s sdr type Temperature' % (ip, username, password)
+    proc = Popen(shlex.split(cmd), stdout=PIPE,stderr=PIPE)
+    results = []
+    names = []
+    while True:
+        line = proc.stdout.readline()
+        line = str(line.rstrip(), encoding='utf-8')
         if not line:
             break
-        print('test: %s' % str(line.rstrip(),encoding='utf-8'))
+        sensor_name = line.split("|")[0].strip()
+        sensor_status = line.split("|")[2].strip()
+        temperature = line.split("|")[-1].strip()
+        # 过滤重复的传感器名称
+        if sensor_name in names:
+            continue
+        names.append(sensor_name)
+        results.append({
+            'sensor_name': sensor_name,
+            'sensor_status': sensor_status,
+            'temperature': temperature
+        })
+    return results
 
-def isHost(line):
-    return line
 
 if __name__ == '__main__':
-    scan_devices2('10.1.35.155/24')
+    temperature('10.1.35.36', 'aicity', 'aicity12345678')

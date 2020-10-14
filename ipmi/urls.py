@@ -10,6 +10,11 @@ from . import views
 urlpatterns = [
     # path('', include(router.urls)),
     # path('api-auth/', include('rest_framework.urls', namespace='rest_framework'))
-    path("",views.index,name='index'),
-    path("devices",views.get_all_devices,name='devices')
+    path("devices/",views.get_all_devices,name='devices'),
+    path('scan/', views.scan_devices, name='scan'),
+    path('credentials/', views.update_credentials, name='credentials'),
+    path('powerctl/', views.powerctl, name='powerctl'),
+    path('powerctl_patch/', views.powerctl_patch, name='powerctl_patch'),
+    path('power_status/', views.power_status, name='power_status'),
+    path('<str:ip>/temperature/',views.get_device_temperature,name="temperature")
 ]
