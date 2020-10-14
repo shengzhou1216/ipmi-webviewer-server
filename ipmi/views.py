@@ -125,13 +125,15 @@ def scan(network):
 
 
 def get_device_temperature(request,ip):
-    # Device.objects.filter(ip=ip).update(temperatures=json.dumps([]))
     ### 获取设备的温度
     device = get_device_by_ip(ip)
     username = device['username']
     password = device['password']
+    if not (username or password):
+        return HttpResponse(json.dumps({"message":'请先设置用户名和密码'}),status=500)
     temperatures = device['temperatures']
-    temperatures = json.loads(temperatures)
+    if temperatures:
+        temperatures = json.loads(temperatures)
     results = ipmitool.temperature(ip,username, password)
     data = []
     if temperatures and len(temperatures) > 0:
